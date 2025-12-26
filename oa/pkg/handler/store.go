@@ -134,10 +134,10 @@ func GetLatestJsonFileContent() (map[string]interface{}, error) {
 	return req, nil
 }
 
-// 获取https://devops.tastien.com/api/get-latest-json 内容
+// 获取最新的json文件内容
 func GetLatestJsonFromApi() (map[string]interface{}, error) {
 	// 发送GET请求
-	resp, err := http.Get("https://devops.tastien.com/api/get-latest-json")
+	resp, err := http.Get("")
 	if err != nil {
 		Logger.Error("Failed to send GET request: %v", err)
 		return nil, err
