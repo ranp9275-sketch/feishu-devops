@@ -1,0 +1,20 @@
+{
+  "OriginalRequest": {
+    "title": "Transition Test Card",
+    "services": [
+      {
+        "name": "service-gray-official-trans",
+        "object_id": "obj-1",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {}
+}

@@ -1,0 +1,50 @@
+{
+  "OriginalRequest": {
+    "title": "",
+    "services": [
+      {
+        "name": "service-order-center-test00",
+        "object_id": "test",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      },
+      {
+        "name": "service-user-center",
+        "object_id": "test",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": "",
+    "receive_id": "ou_792407cf78ecf995f7d2cdf99a556900",
+    "receive_id_type": "open_id"
+  },
+  "DisabledActions": {
+    "BATCH:batch_release_all": true,
+    "BATCH:stop_batch_release": true,
+    "service-order-center-test00:check": true,
+    "service-order-center-test00:do_check": true,
+    "service-order-center-test00:do_gray_release": true,
+    "service-order-center-test00:do_official_release": true,
+    "service-order-center-test00:do_restart": true,
+    "service-order-center-test00:do_rollback": true,
+    "service-user-center:check": true,
+    "service-user-center:do_gray_release": true,
+    "service-user-center:do_official_release": true,
+    "service-user-center:do_restart": true,
+    "service-user-center:do_rollback": true
+  },
+  "ActionCounts": {
+    "BATCH:stop_batch_release": 1,
+    "service-order-center-test00:do_check": 1,
+    "service-order-center-test00:do_official_release": 1
+  }
+}

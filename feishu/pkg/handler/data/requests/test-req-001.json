@@ -1,0 +1,11 @@
+{
+  "OriginalRequest": {
+    "title": "",
+    "services": null,
+    "object_id": ""
+  },
+  "DisabledActions": {
+    "test-service:do_check": true
+  },
+  "ActionCounts": {}
+}

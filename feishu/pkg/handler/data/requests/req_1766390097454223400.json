@@ -1,0 +1,24 @@
+{
+  "OriginalRequest": {
+    "title": "Test Official Phase",
+    "services": [
+      {
+        "name": "service-c",
+        "object_id": "service-c",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": "",
+    "receive_id": "ou_test",
+    "receive_id_type": "open_id"
+  },
+  "DisabledActions": {
+    "service-c:check": true
+  },
+  "ActionCounts": {}
+}

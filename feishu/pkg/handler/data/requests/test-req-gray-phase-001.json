@@ -1,0 +1,23 @@
+{
+  "OriginalRequest": {
+    "title": "Gray Phase Test Card",
+    "services": [
+      {
+        "name": "service-gray-official",
+        "object_id": "obj-1",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {
+    "service-gray-official:do_gray_release": 1
+  }
+}

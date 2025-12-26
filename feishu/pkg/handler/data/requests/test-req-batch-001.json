@@ -1,0 +1,35 @@
+{
+  "OriginalRequest": {
+    "title": "Batch Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray_release"
+        ]
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray_release"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {
+    "service-a:do_gray_release": 2,
+    "service-a:do_official_release": 2,
+    "service-b:do_gray_release": 2,
+    "service-b:do_official_release": 2
+  }
+}

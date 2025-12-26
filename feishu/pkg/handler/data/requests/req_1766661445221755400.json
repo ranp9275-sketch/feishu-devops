@@ -1,0 +1,20 @@
+{
+  "OriginalRequest": {
+    "title": "Stop Batch Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray_release"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {}
+}

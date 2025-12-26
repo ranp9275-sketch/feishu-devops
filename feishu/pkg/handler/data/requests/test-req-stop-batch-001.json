@@ -1,0 +1,26 @@
+{
+  "OriginalRequest": {
+    "title": "Stop Batch Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray_release"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {
+    "BATCH:batch_release_all": true,
+    "BATCH:stop_batch_release": true,
+    "service-a:do_gray_release": true,
+    "service-a:do_restart": true,
+    "service-a:do_rollback": true
+  },
+  "ActionCounts": {}
+}

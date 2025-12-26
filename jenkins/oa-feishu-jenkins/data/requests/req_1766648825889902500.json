@@ -1,0 +1,36 @@
+{
+  "OriginalRequest": {
+    "title": "",
+    "services": [
+      {
+        "name": "test-real-job-001",
+        "object_id": "test-real-job-001",
+        "branches": [
+          "feature/test-branch"
+        ],
+        "actions": [
+          "check",
+          "gray",
+          "official"
+        ]
+      },
+      {
+        "name": "test-real-job-002",
+        "object_id": "test-real-job-002",
+        "branches": [
+          "hotfix/urgent-fix"
+        ],
+        "actions": [
+          "check",
+          "gray",
+          "official"
+        ]
+      }
+    ],
+    "object_id": "",
+    "receive_id": "ou_792407cf78ecf995f7d2cdf99a556900",
+    "receive_id_type": "open_id"
+  },
+  "DisabledActions": {},
+  "ActionCounts": {}
+}

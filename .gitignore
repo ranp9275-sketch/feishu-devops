@@ -1,0 +1,21 @@
+# Binaries
+devops.exe
+devops
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+data/requests/
+jenkins/oa-feishu-jenkins/data/requests/
+feishu/pkg/handler/data/requests/
+oa/pkg/handler/data/requests/
+
+# Env
+.env
+
+# IDE
+.vscode/
+.idea/

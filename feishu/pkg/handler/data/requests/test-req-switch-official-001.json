@@ -1,0 +1,40 @@
+{
+  "OriginalRequest": {
+    "title": "Switch Official Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray"
+        ]
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "restart",
+          "gray"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {
+    "BATCH:batch_release_all": true,
+    "BATCH:stop_batch_release": true,
+    "service-a:do_gray_release": true,
+    "service-a:do_restart": true,
+    "service-a:do_rollback": true,
+    "service-b:do_gray_release": true,
+    "service-b:do_restart": true,
+    "service-b:do_rollback": true
+  },
+  "ActionCounts": {}
+}

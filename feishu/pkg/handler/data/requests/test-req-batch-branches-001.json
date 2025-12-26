@@ -1,0 +1,31 @@
+{
+  "OriginalRequest": {
+    "title": "Batch Branches Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "feat/a"
+        ],
+        "actions": null
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "fix/b"
+        ],
+        "actions": null
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {
+    "service-a:do_gray_release": 1,
+    "service-a:do_official_release": 1,
+    "service-b:do_gray_release": 1,
+    "service-b:do_official_release": 1
+  }
+}

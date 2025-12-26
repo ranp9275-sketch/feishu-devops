@@ -1,0 +1,68 @@
+{
+  "OriginalRequest": {
+    "title": "应用发布申请 (测试)",
+    "services": [
+      {
+        "name": "tustin-construction-assistant-admin-web",
+        "object_id": "tustin-construction-assistant-admin-web",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "release",
+          "rollback",
+          "restart"
+        ]
+      },
+      {
+        "name": "tustin-construction-assistant-admin-web",
+        "object_id": "tustin-construction-assistant-admin-web",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "release",
+          "rollback",
+          "restart"
+        ]
+      },
+      {
+        "name": "tustin-construction-assistant-admin-web",
+        "object_id": "tustin-construction-assistant-admin-web",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "release",
+          "rollback",
+          "restart"
+        ]
+      },
+      {
+        "name": "tustin-construction-assistant-admin-web",
+        "object_id": "tustin-construction-assistant-admin-web",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "release",
+          "rollback",
+          "restart"
+        ]
+      }
+    ],
+    "object_id": "",
+    "receive_id": "ou_792407cf78ecf995f7d2cdf99a556900",
+    "receive_id_type": "open_id"
+  },
+  "DisabledActions": {
+    "tustin-construction-assistant-admin-web:check": true
+  },
+  "ActionCounts": {
+    "tustin-construction-assistant-admin-web:do_gray_release": 2
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "OriginalRequest": {
+    "title": "Filter Completed Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray"
+        ]
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      },
+      {
+        "name": "service-c",
+        "object_id": "service-c",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {
+    "BATCH:batch_release_all": true,
+    "BATCH:stop_batch_release": true,
+    "service-a:do_gray_release": true,
+    "service-a:do_restart": true,
+    "service-a:do_rollback": true,
+    "service-b:do_gray_release": true,
+    "service-b:do_official_release": true,
+    "service-b:do_restart": true,
+    "service-b:do_rollback": true,
+    "service-c:do_gray_release": true,
+    "service-c:do_official_release": true,
+    "service-c:do_restart": true,
+    "service-c:do_rollback": true
+  },
+  "ActionCounts": {
+    "service-a:do_gray_release": 1,
+    "service-b:do_official_release": 1
+  }
+}

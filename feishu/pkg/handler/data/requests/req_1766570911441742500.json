@@ -1,0 +1,31 @@
+{
+  "OriginalRequest": {
+    "title": "Switch Official Test Card",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "restart",
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {}
+}

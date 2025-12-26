@@ -1,0 +1,36 @@
+{
+  "OriginalRequest": {
+    "title": "Test Gray Phase",
+    "services": [
+      {
+        "name": "service-a",
+        "object_id": "service-a",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "official"
+        ]
+      },
+      {
+        "name": "service-b",
+        "object_id": "service-b",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": "",
+    "receive_id": "ou_test",
+    "receive_id_type": "open_id"
+  },
+  "DisabledActions": {
+    "service-a:check": true,
+    "service-b:check": true
+  },
+  "ActionCounts": {}
+}

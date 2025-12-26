@@ -1,0 +1,22 @@
+{
+  "OriginalRequest": {
+    "title": "Official Test Card",
+    "services": [
+      {
+        "name": "service-official",
+        "object_id": "service-official",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {},
+  "ActionCounts": {
+    "service-official:do_official_release": 2
+  }
+}

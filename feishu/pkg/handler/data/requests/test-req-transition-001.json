@@ -1,0 +1,28 @@
+{
+  "OriginalRequest": {
+    "title": "Transition Test Card",
+    "services": [
+      {
+        "name": "service-gray-official-trans",
+        "object_id": "obj-1",
+        "branches": [
+          "master"
+        ],
+        "actions": [
+          "gray",
+          "official"
+        ]
+      }
+    ],
+    "object_id": ""
+  },
+  "DisabledActions": {
+    "BATCH:batch_release_all": true,
+    "BATCH:stop_batch_release": true,
+    "service-gray-official-trans:do_gray_release": true,
+    "service-gray-official-trans:do_official_release": true,
+    "service-gray-official-trans:do_restart": true,
+    "service-gray-official-trans:do_rollback": true
+  },
+  "ActionCounts": {}
+}
