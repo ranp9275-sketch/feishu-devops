@@ -88,9 +88,9 @@ func LoadConfig() (*Config, error) {
 			IdleConnTimeout:     getDurationEnv("IDLE_CONN_TIMEOUT", 90*time.Second),
 
 			// Jenkins 配置
-			JenkinsURL:   getEnv("JENKINS_URL", ""),
-			JenkinsUser:  getEnv("JENKINS_USER", ""),
-			JenkinsToken: getEnv("JENKINS_TOKEN", ""),
+			JenkinsURL:   getEnv("JENKINS_URL", "http://10.8.2.192:30008/"),
+			JenkinsUser:  getEnv("JENKINS_USER", "admin"),
+			JenkinsToken: getEnv("JENKINS_TOKEN", "admin123"),
 
 			//mysql 配置
 			mysqlHost:     getEnv("MYSQL_HOST", "localhost"),

@@ -134,7 +134,7 @@ func GetLatestJsonFileContent() (map[string]interface{}, error) {
 	return req, nil
 }
 
-// 获取最新的json文件内容
+// 获取 最新的json文件内容
 func GetLatestJsonFromApi() (map[string]interface{}, error) {
 	// 发送GET请求
 	resp, err := http.Get("")
