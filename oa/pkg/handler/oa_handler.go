@@ -35,10 +35,10 @@ func (h *ApiHandler) Init() error {
 }
 
 func (h *ApiHandler) Register(r gin.IRouter) {
-	r.POST("/api/store-json", h.handler.StoreJsonHandler)
-	r.GET("/api/get-json/:id", h.handler.GetJsonHandler)
-	r.GET("/api/get-json-all", h.handler.GetJsonBatchHandler)
-	r.GET("/api/get-latest-json", h.handler.GetLatestJsonHandler)
+	r.POST("/store-json", h.handler.StoreJsonHandler)
+	r.GET("/get-json/:id", h.handler.GetJsonHandler)
+	r.GET("/get-json-all", h.handler.GetJsonBatchHandler)
+	r.GET("/get-latest-json", h.handler.GetLatestJsonHandler)
 }
 
 type Handler struct {
@@ -125,12 +125,12 @@ func (h *Handler) StoreJsonHandler(c *gin.Context) {
 		OriginalData: originalData,
 	}
 
-	// 讲数据存储到磁盘
-	err = SaveToDisk(uniqueID, storedJSON)
+	// 讲数据存储到数据库
+	err = SaveToDB(uniqueID, storedJSON)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIResponse{
 			Code:    http.StatusInternalServerError,
-			Message: "Failed to save data to disk",
+			Message: "Failed to save data to database",
 		})
 		return
 	}
@@ -155,12 +155,12 @@ func (h *Handler) GetJsonHandler(c *gin.Context) {
 		return
 	}
 
-	// 从磁盘加载数据
-	req, err := LoadFromDisk(id)
+	// 从数据库加载数据
+	req, err := LoadFromDB(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIResponse{
 			Code:    http.StatusInternalServerError,
-			Message: "Failed to load data from disk",
+			Message: "Failed to load data from database",
 		})
 		return
 	}
@@ -174,22 +174,39 @@ func (h *Handler) GetJsonHandler(c *gin.Context) {
 }
 
 func (h *Handler) GetJsonBatchHandler(c *gin.Context) {
-	// 从磁盘加载所有数据
-	reqs, err := LoadJsonFromDiskALL()
+	// 从数据库加载所有数据
+	reqs, err := LoadAllJsonFromDB()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIResponse{
 			Code:    http.StatusInternalServerError,
-			Message: "Failed to load data from disk",
+			Message: "Failed to load data from database",
 		})
 		return
 	}
 
-	if len(reqs) == 0 {
-		c.JSON(http.StatusNotFound, APIResponse{
-			Code:    http.StatusNotFound,
-			Message: "No valid data found",
-		})
-		return
+	// 即使为空也返回空数组，而不是404
+	if reqs == nil {
+		reqs = []map[string]interface{}{}
+	}
+
+	// Enrich data with parsed details
+	for i, req := range reqs {
+		if originalData, ok := req["original_data"].(map[string]interface{}); ok {
+			details := ExtractRequestDetails(originalData)
+			req["parsed_request_name"] = details["request_name"]
+			req["parsed_applicant"] = details["applicant"]
+			req["parsed_request_time"] = details["request_time"]
+			req["parsed_job_name"] = details["job_name"]
+		} else {
+			// Try parsing the top-level req if original_data is missing or empty
+			// (Though StoredJSON structure usually has it)
+			details := ExtractRequestDetails(req)
+			req["parsed_request_name"] = details["request_name"]
+			req["parsed_applicant"] = details["applicant"]
+			req["parsed_request_time"] = details["request_time"]
+			req["parsed_job_name"] = details["job_name"]
+		}
+		reqs[i] = req
 	}
 
 	// 返回成功响应
@@ -202,12 +219,12 @@ func (h *Handler) GetJsonBatchHandler(c *gin.Context) {
 
 // 获取最新的json文件内容
 func (h *Handler) GetLatestJsonHandler(c *gin.Context) {
-	// 从磁盘加载最新数据
-	latestFile, err := GetLatestJsonFileContent()
+	// 从数据库加载最新数据
+	latestFile, err := GetLatestJsonFromDB()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, APIResponse{
 			Code:    http.StatusInternalServerError,
-			Message: "Failed to load latest data from disk",
+			Message: "Failed to load latest data from database",
 		})
 		return
 	}

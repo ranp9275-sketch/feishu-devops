@@ -56,7 +56,7 @@ func TestSendCard(t *testing.T) {
 
 	// Expectation
 	mockSender.SendFunc = func(ctx context.Context, receiveID, receiveIDType, msgType, content string) error {
-		if receiveID != "" {
+		if receiveID != "user123" {
 			t.Errorf("expected receiveID user123, got %s", receiveID)
 		}
 		if receiveIDType != "open_id" {

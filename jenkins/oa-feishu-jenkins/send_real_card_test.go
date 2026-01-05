@@ -6,6 +6,7 @@ import (
 	"devops/feishu/pkg/feishu"
 	oajenkins "devops/jenkins/oa-jenkins"
 	"fmt"
+	"os"
 	"testing"
 )
 
@@ -22,6 +23,10 @@ func (r *RealSender) Send(ctx context.Context, receiveID, receiveIDType, msgType
 // TestSendRealCard sends a real card to the specified user ID using the actual environment configuration.
 // CAUTION: This will send a real notification.
 func TestSendRealCard(t *testing.T) {
+	if os.Getenv("RUN_FEISHU_INTEGRATION_TESTS") != "1" {
+		t.Skip("skipping Feishu integration tests")
+	}
+
 	// Restore original functions after test to avoid side effects if run in suite
 	origLoadConfig := loadConfigFunc
 	origNewSender := newSenderFunc
@@ -40,7 +45,10 @@ func TestSendRealCard(t *testing.T) {
 	}
 
 	// Real user ID provided by user
-	realReceiveID := "ou_792407cf78ecf995f7d2cdf99a556900"
+	realReceiveID := os.Getenv("TEST_FEISHU_OPEN_ID")
+	if realReceiveID == "" {
+		t.Skip("missing TEST_FEISHU_OPEN_ID")
+	}
 
 	// Construct real job data for the card
 	jobs := []*oajenkins.JenkinsJob{

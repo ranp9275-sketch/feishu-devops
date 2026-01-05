@@ -8,13 +8,15 @@ devops
 
 # Logs
 *.log
-data/requests/
-jenkins/oa-feishu-jenkins/data/requests/
-feishu/pkg/handler/data/requests/
-oa/pkg/handler/data/requests/
+data/
+jenkins/oa-feishu-jenkins/data/
+feishu/pkg/handler/data/
+oa/pkg/handler/data/
+feishu/pkg/feishu/groupchat/data/
 
 # Env
 .env
+config.yaml
 
 # IDE
 .vscode/

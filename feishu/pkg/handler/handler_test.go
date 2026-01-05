@@ -20,7 +20,7 @@ func TestSendTextRequestParsing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := newHandler()
 	h.sender = feishu.NewWebhookSender()
-	body := []byte(`{"receive_id":"ou_792407cf78ecf995f7d2cdf99a556900","receive_id_type":"open_id","msg_type":"text","content":{"text":"hello"}}`)
+	body := []byte(`{"receive_id":"ou_test_user_id","receive_id_type":"open_id","msg_type":"text","content":{"text":"hello"}}`)
 	
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -37,7 +37,7 @@ func TestSendTextPlainString(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := newHandler()
 	h.sender = feishu.NewWebhookSender()
-	body := []byte(`{"receive_id":"ou_792407cf78ecf995f7d2cdf99a556900","receive_id_type":"open_id","msg_type":"text","content":"你好，这是字符串内容"}`)
+	body := []byte(`{"receive_id":"ou_test_user_id","receive_id_type":"open_id","msg_type":"text","content":"你好，这是字符串内容"}`)
 	
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -55,7 +55,7 @@ func TestSendInteractiveValidation(t *testing.T) {
 	h := newHandler()
 	h.sender = feishu.NewWebhookSender()
 	// 发送空 content，预期 400
-	body := []byte(`{"receive_id":"ou_792407cf78ecf995f7d2cdf99a556900","receive_id_type":"open_id","msg_type":"interactive","content":{}}`)
+	body := []byte(`{"receive_id":"ou_test_user_id","receive_id_type":"open_id","msg_type":"interactive","content":{}}`)
 	
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -73,7 +73,7 @@ func TestSendInteractiveOK(t *testing.T) {
 	h := newHandler()
 	h.sender = feishu.NewWebhookSender()
 	card := `{"schema":"2.0","header":{"title":{"content":"标题","tag":"plain_text"}},"elements":[{"tag":"markdown","content":"正文内容"}]}`
-	body := []byte(`{"receive_id":"ou_792407cf78ecf995f7d2cdf99a556900","receive_id_type":"open_id","msg_type":"interactive","content":` + card + `}`)
+	body := []byte(`{"receive_id":"ou_test_user_id","receive_id_type":"open_id","msg_type":"interactive","content":` + card + `}`)
 	
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

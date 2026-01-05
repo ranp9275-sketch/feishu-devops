@@ -5,6 +5,7 @@ import (
 	"devops/feishu/pkg/robot"
 	"devops/tools/ioc"
 	"devops/tools/middleware"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
@@ -39,6 +40,20 @@ func (h *RobotHandler) Register(appRouter gin.IRouter) {
 
 }
 
+type apiResponse struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+func writeSuccess(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, apiResponse{
+		Code:    0,
+		Message: "success",
+		Data:    data,
+	})
+}
+
 func (h *RobotHandler) CreateFeishuRobot(gin *gin.Context) {
 	req := robot.NewCreateFeishuRobotRequest()
 	if err := gin.BindJSON(&req); err != nil {
@@ -64,11 +79,11 @@ func (h *RobotHandler) CreateFeishuRobot(gin *gin.Context) {
 		return
 	}
 
-	middleware.Success(in, gin)
+	writeSuccess(gin, in)
 }
 
 func (h *RobotHandler) DescribeFeishuRobot(gin *gin.Context) {
-	name := gin.Param("name")
+	name := gin.Query("name")
 	robot, err := h.RobotApi.DescribeRobot(gin.Request.Context(), robot.NewDescribeFeishuRobotRequest(name))
 	if err != nil {
 		middleware.Failed(err, gin)
@@ -78,7 +93,7 @@ func (h *RobotHandler) DescribeFeishuRobot(gin *gin.Context) {
 		middleware.Failed(middleware.ErrValidateFailed("robot not found"), gin)
 		return
 	}
-	middleware.Success(robot, gin)
+	writeSuccess(gin, robot)
 }
 
 func (h *RobotHandler) QueryFeishuRobot(gin *gin.Context) {
@@ -92,11 +107,11 @@ func (h *RobotHandler) QueryFeishuRobot(gin *gin.Context) {
 		return
 	}
 
-	middleware.Success(robots, gin)
+	writeSuccess(gin, robots)
 }
 
 func (h *RobotHandler) DeleteFeishuRobot(gin *gin.Context) {
-	req := robot.NewDeleteFeishuRobotRequest(gin.Param("name"))
+	req := robot.NewDeleteFeishuRobotRequest("")
 	if err := gin.BindJSON(&req); err != nil {
 		middleware.Failed(err, gin)
 		return
@@ -108,39 +123,36 @@ func (h *RobotHandler) DeleteFeishuRobot(gin *gin.Context) {
 		return
 	}
 
-	middleware.Success(in, gin)
+	writeSuccess(gin, in)
 }
 
 func (h *RobotHandler) UpdateFeishuRobot(gin *gin.Context) {
+	req := robot.NewUpdateFeishuRobotRequest("")
+	if err := gin.BindJSON(&req); err != nil {
+		middleware.Failed(err, gin)
+		return
+	}
 
-	name := gin.Param("name")
+	// Ensure Name is set
+	if req.Name == "" && req.CreateFeishuRobotRequest != nil {
+		req.Name = req.CreateFeishuRobotRequest.Name
+	}
 
-	if name == "" {
+	if req.Name == "" {
 		middleware.Failed(middleware.ErrValidateFailed("name is empty"), gin)
 		return
 	}
 
-	req := robot.NewUpdateFeishuRobotRequest(name)
-	if err := gin.BindJSON(&req); err != nil {
-		middleware.Failed(err, gin)
-		return
-	}
-	in, err := h.RobotApi.DescribeRobot(gin.Request.Context(), robot.NewDescribeFeishuRobotRequest(name))
+	// Check if robot exists
+	existing, err := h.RobotApi.DescribeRobot(gin.Request.Context(), robot.NewDescribeFeishuRobotRequest(req.Name))
 	if err != nil {
 		middleware.Failed(err, gin)
 		return
 	}
-	if in == nil {
+	if existing == nil {
 		middleware.Failed(middleware.ErrValidateFailed("robot not found"), gin)
 		return
 	}
-
-	if err := gin.BindJSON(&req); err != nil {
-		middleware.Failed(err, gin)
-		return
-	}
-
-	req.Name = name
 
 	ins, err := h.RobotApi.UpdateRobot(gin.Request.Context(), req)
 	if err != nil {
@@ -148,5 +160,5 @@ func (h *RobotHandler) UpdateFeishuRobot(gin *gin.Context) {
 		return
 	}
 
-	middleware.Success(ins, gin)
+	writeSuccess(gin, ins)
 }

@@ -18,11 +18,26 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+	"gorm.io/gorm"
 )
 
 var (
 	loadConfigFunc = c.LoadConfig
 )
+
+type FeishuTokenModel struct {
+	ID                uint   `gorm:"primaryKey"`
+	UserAccessToken   string `gorm:"type:text"`
+	UserRefreshToken  string `gorm:"type:text"`
+	TenantAccessToken string `gorm:"type:text"`
+	Expire            int64
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func (FeishuTokenModel) TableName() string {
+	return "feishu_tokens"
+}
 
 type CreateGroupChatRequest struct {
 	UserIdType  string   `json:"user_id_type"`
@@ -49,7 +64,9 @@ type SearchUserRespBodyUser struct {
 
 type Token struct {
 	UserAccessToken   string `json:"user_access_token"`
+	UserRefreshToken  string `json:"user_refresh_token"`
 	TenantAccessToken string `json:"tenant_access_token"`
+	Expire            int64  `json:"expire"`
 }
 
 func NewCreateGroupChatRequest(userIDType, uuid, name, description string, userIDs []string) *CreateGroupChatRequest {
@@ -72,7 +89,9 @@ type Client struct {
 	mu         sync.RWMutex
 }
 
-func (c *Client) NewClient() *Client {
+const tokenFile = "data/feishu_token.json"
+
+func NewClient() *Client {
 	// 加载配置
 	cfg, err := loadConfigFunc()
 	if err != nil {
@@ -81,9 +100,108 @@ func (c *Client) NewClient() *Client {
 
 	// 创建 Feishu 客户端
 	client := lark.NewClient(cfg.FeishuAppID, cfg.FeishuAppSecret)
-	return &Client{
+	c := &Client{
 		Client: client,
 		Config: cfg,
+		Clog:   logger.NewLogger(cfg.LogLevel),
+	}
+
+	// 尝试加载持久化的 Token
+	if err := c.loadTokenFromDB(); err != nil {
+		c.Clog.Info("No persisted token found or failed to load from DB: %v", err)
+	}
+
+	return c
+}
+
+// loadTokenFromDB 从数据库加载 Token
+func (c *Client) loadTokenFromDB() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	db := c.Config.GetDB()
+	if db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	if !db.Migrator().HasTable(&FeishuTokenModel{}) {
+		db.AutoMigrate(&FeishuTokenModel{})
+	}
+
+	var model FeishuTokenModel
+	// Get the latest one or the only one
+	if err := db.First(&model).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil // No token yet, not an error
+		}
+		return err
+	}
+
+	c.tokenCache = &Token{
+		UserAccessToken:   model.UserAccessToken,
+		UserRefreshToken:  model.UserRefreshToken,
+		TenantAccessToken: model.TenantAccessToken,
+		Expire:            model.Expire,
+	}
+	return nil
+}
+
+// saveTokenToDB 保存 Token 到数据库
+func (c *Client) saveTokenToDB() error {
+	if c.tokenCache == nil {
+		return nil
+	}
+
+	db := c.Config.GetDB()
+	if db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
+
+	if !db.Migrator().HasTable(&FeishuTokenModel{}) {
+		db.AutoMigrate(&FeishuTokenModel{})
+	}
+
+	var model FeishuTokenModel
+	// Check if exists
+	err := db.First(&model).Error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return err
+	}
+
+	if err == gorm.ErrRecordNotFound {
+		// Create
+		model = FeishuTokenModel{
+			UserAccessToken:   c.tokenCache.UserAccessToken,
+			UserRefreshToken:  c.tokenCache.UserRefreshToken,
+			TenantAccessToken: c.tokenCache.TenantAccessToken,
+			Expire:            c.tokenCache.Expire,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
+		}
+		return db.Create(&model).Error
+	} else {
+		// Update
+		model.UserAccessToken = c.tokenCache.UserAccessToken
+		model.UserRefreshToken = c.tokenCache.UserRefreshToken
+		model.TenantAccessToken = c.tokenCache.TenantAccessToken
+		model.Expire = c.tokenCache.Expire
+		model.UpdatedAt = time.Now()
+		return db.Save(&model).Error
+	}
+}
+
+// UpdateTokenCache 更新 Token 缓存并持久化
+func (c *Client) UpdateTokenCache(uToken, rToken string, expire int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tokenCache = &Token{
+		UserAccessToken:  uToken,
+		UserRefreshToken: rToken,
+		Expire:           time.Now().Unix() + expire,
+	}
+	// 异步或同步保存？这里选择同步以确保安全
+	if err := c.saveTokenToDB(); err != nil {
+		c.Clog.Error("Failed to save token to DB: %v", err)
 	}
 }
 
@@ -194,10 +312,10 @@ func (c *Client) CreateGroupChat(ctx context.Context, ownerId string, req *Creat
 		if respData.Data != nil && respData.Data.ChatId != nil {
 			return *respData.Data.ChatId, nil
 		}
-		c.Clog.Error("chat_id not found in response", "CreateGroupChat")
+		c.Clog.Error("chat_id not found in response [func=%s]", "CreateGroupChat")
 		return "", fmt.Errorf("chat_id not found in response")
 	} else {
-		c.Clog.Error(err.Error(), "failed to get user token")
+		c.Clog.Error("failed to get user token: %v [func=%s]", err, "CreateGroupChat")
 		fmt.Printf("Info: User Access Token not available (%v). Using default Tenant Access Token via SDK.\n", err)
 	}
 
@@ -218,11 +336,11 @@ func (c *Client) CreateGroupChat(ctx context.Context, ownerId string, req *Creat
 		// fmt.Println("Info: Using Tenant Access Token from method.")
 		opts = append(opts, larkcore.WithTenantAccessToken(tenantToken))
 	} else if tenantToken := os.Getenv("FEISHU_TENANT_ACCESS_TOKEN"); tenantToken != "" {
-		c.Clog.Error("tenant access token not found in cache or environment variable", "CreateGroupChat")
+		c.Clog.Error("tenant access token not found in cache or environment variable [func=%s]", "CreateGroupChat")
 
 		opts = append(opts, larkcore.WithTenantAccessToken(tenantToken))
 	} else {
-		c.Clog.Error("tenant access token not found in cache or environment variable", "CreateGroupChat")
+		c.Clog.Error("tenant access token not found in cache or environment variable [func=%s]", "CreateGroupChat")
 	}
 
 	resp, err := client.Im.V1.Chat.Create(ctx, re, opts...)
@@ -237,7 +355,7 @@ func (c *Client) CreateGroupChat(ctx context.Context, ownerId string, req *Creat
 	}
 
 	if resp.Data != nil && resp.Data.ChatId != nil {
-		c.Clog.Info(fmt.Sprintf("Info: Created Group Chat ID: %s", *resp.Data.ChatId), "CreateGroupChat")
+		c.Clog.Info("Info: Created Group Chat ID: %s [func=%s]", *resp.Data.ChatId, "CreateGroupChat")
 		return *resp.Data.ChatId, nil
 	}
 
@@ -260,45 +378,45 @@ func (c *Client) GetUserIDByUsername(ctx context.Context, username string) (stri
 
 	resp, err := client.Contact.V3.User.List(ctx, req)
 	if err != nil {
-		c.Clog.Error(err.Error(), "list users failed")
+		c.Clog.Error("list users failed: %v [func=%s]", err, "GetUserIDByUsername")
 		return "", fmt.Errorf("list users failed: %w", err)
 	}
 
 	if !resp.Success() {
-		c.Clog.Error(resp.Msg, "feishu api error")
+		c.Clog.Error("feishu api error: %s [func=%s]", resp.Msg, "GetUserIDByUsername")
 		return "", fmt.Errorf("list users failed: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data == nil || resp.Data.Items == nil {
-		c.Clog.Error("user list is nil", "GetUserIDByUsername")
+		c.Clog.Error("user list is nil [func=%s]", "GetUserIDByUsername")
 		//fmt.Printf("Debug: User list is nil. Check 'Contacts Scope' (可访问的数据范围) in Developer Console.\n")
 		return "", fmt.Errorf("user not found: %s", username)
 	}
 
 	// 遍历用户列表
-	c.Clog.Info(fmt.Sprintf("Found %d users in the list. Scanning for match...", len(resp.Data.Items)), "GetUserIDByUsername")
+	c.Clog.Info("Found %d users in the list. Scanning for match... [func=%s]", len(resp.Data.Items), "GetUserIDByUsername")
 
 	for _, user := range resp.Data.Items {
 		name := ""
 		if user.Name != nil {
 			name = *user.Name
-			c.Clog.Info(fmt.Sprintf("Scanning user: %s (ID: %s)", name, *user.UserId), "GetUserIDByUsername")
+			c.Clog.Info("Scanning user: %s (ID: %s) [func=%s]", name, *user.UserId, "GetUserIDByUsername")
 		} else {
 			// 如果名字为空，说明权限不足
 			if user.UserId != nil {
-				c.Clog.Warn(fmt.Sprintf("Found user ID %s but name is empty. Check 'Access user name' permission.", *user.UserId), "GetUserIDByUsername")
-				c.Clog.Fatal("CRITICAL: If you have added permissions, you MUST click 'Create Version' and 'Publish' in the Developer Console for changes to take effect!", "GetUserIDByUsername")
+				c.Clog.Warn("Found user ID %s but name is empty. Check 'Access user name' permission. [func=%s]", *user.UserId, "GetUserIDByUsername")
+				c.Clog.Fatal("CRITICAL: If you have added permissions, you MUST click 'Create Version' and 'Publish' in the Developer Console for changes to take effect! [func=%s]", "GetUserIDByUsername")
 			}
 			// 尝试打印完整 user 对象看是否有其他字段可用
 			userJSON, _ := json.Marshal(user)
-			c.Clog.Error(fmt.Sprintf("User: %s", string(userJSON)), "GetUserIDByUsername")
+			c.Clog.Error("User: %s [func=%s]", string(userJSON), "GetUserIDByUsername")
 		}
 
 		if name == username {
 			if user.UserId != nil {
 				return *user.UserId, nil
 			}
-			c.Clog.Error(fmt.Sprintf("User %s has no user_id field", name), "GetUserIDByUsername")
+			c.Clog.Error("User %s has no user_id field [func=%s]", name, "GetUserIDByUsername")
 			return "", fmt.Errorf("found user %s but user_id is missing", username)
 		}
 	}
@@ -317,8 +435,13 @@ func (c *Client) GetTenantAccessToken(ctx context.Context) (string, error) {
 	c.mu.RUnlock()
 
 	// 缓存未命中，降级为直接获取
-	c.Clog.Info("Tenant Token cache miss, fetching directly...", "GetTenantAccessToken")
-	return c.fetchTenantAccessToken(ctx)
+	c.Clog.Info("Tenant Token cache miss, fetching directly... [func=%s]", "GetTenantAccessToken")
+	token, _, err := c.fetchTenantAccessToken(ctx)
+	if err != nil {
+		c.Clog.Error(err.Error(), "fetch tenant token failed")
+		return "", fmt.Errorf("fetch tenant token failed: %w", err)
+	}
+	return token, nil
 }
 
 // GetAndRefreshUserToken 获取 User Access Token (优先从缓存获取)
@@ -329,15 +452,24 @@ func (c *Client) GetAndRefreshUserToken(ctx context.Context) (string, error) {
 		c.mu.RUnlock()
 		return token, nil
 	}
+	cachedToken := c.tokenCache
 	c.mu.RUnlock()
 
 	// 缓存未命中，降级为直接获取
-	c.Clog.Info("User Token cache miss, fetching directly...", "GetAndRefreshUserToken")
-	return c.fetchUserAccessToken(ctx)
+	c.Clog.Info("User Token cache miss, fetching directly... [func=%s]", "GetAndRefreshUserToken")
+	token, refreshToken, expire, err := c.fetchUserAccessToken(ctx, cachedToken)
+	if err != nil {
+		return "", err
+	}
+
+	// Update cache and persist
+	c.UpdateTokenCache(token, refreshToken, expire)
+
+	return token, nil
 }
 
 // fetchTenantAccessToken 获取 Tenant Access Token (Internal)
-func (c *Client) fetchTenantAccessToken(ctx context.Context) (string, error) {
+func (c *Client) fetchTenantAccessToken(ctx context.Context) (string, int64, error) {
 	cfg := c.Config
 	url := "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
 	body := map[string]string{
@@ -349,7 +481,7 @@ func (c *Client) fetchTenantAccessToken(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		c.Clog.Error(err.Error(), "create tenant token request failed")
-		return "", fmt.Errorf("create tenant token request failed: %w", err)
+		return "", 0, fmt.Errorf("create tenant token request failed: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 
@@ -357,7 +489,7 @@ func (c *Client) fetchTenantAccessToken(ctx context.Context) (string, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		c.Clog.Error(err.Error(), "do tenant token request failed")
-		return "", fmt.Errorf("do tenant token request failed: %w", err)
+		return "", 0, fmt.Errorf("do tenant token request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -369,29 +501,36 @@ func (c *Client) fetchTenantAccessToken(ctx context.Context) (string, error) {
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		c.Clog.Error(err.Error(), "decode tenant token response failed")
-		return "", fmt.Errorf("decode tenant token response failed: %w", err)
+		return "", 0, fmt.Errorf("decode tenant token response failed: %w", err)
 	}
 	if tokenResp.Code != 0 {
 		c.Clog.Error(fmt.Sprintf("get tenant token failed: code=%d, msg=%s", tokenResp.Code, tokenResp.Msg), "fetchTenantAccessToken")
-		return "", fmt.Errorf("get tenant token failed: code=%d, msg=%s", tokenResp.Code, tokenResp.Msg)
+		return "", 0, fmt.Errorf("get tenant token failed: code=%d, msg=%s", tokenResp.Code, tokenResp.Msg)
 	}
 
-	return tokenResp.TenantAccessToken, nil
+	return tokenResp.TenantAccessToken, int64(tokenResp.Expire), nil
 }
 
 // fetchUserAccessToken 获取和刷新用户token (Internal)
-func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
+func (c *Client) fetchUserAccessToken(ctx context.Context, token *Token) (string, string, int64, error) {
 	cfg := c.Config
 	// 0. 优先尝试从环境变量获取 User Access Token (用于调试或手动提供)
 	if userToken := os.Getenv("FEISHU_USER_ACCESS_TOKEN"); userToken != "" {
-		c.Clog.Info("Using User Access Token from environment variable.", "fetchUserAccessToken")
-		return userToken, nil
+		c.Clog.Info("Using User Access Token from environment variable. [func=%s]", "fetchUserAccessToken")
+		return userToken, "", 0, nil
 	}
 
 	url := "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
+	client := &http.Client{}
 
 	// 1. 优先尝试使用 Refresh Token 刷新
-	refreshToken := os.Getenv("FEISHU_REFRESH_TOKEN")
+	var refreshToken string
+	if token != nil && token.UserRefreshToken != "" {
+		refreshToken = token.UserRefreshToken
+	} else {
+		refreshToken = os.Getenv("FEISHU_REFRESH_TOKEN")
+	}
+
 	if refreshToken != "" {
 		tokenBody := map[string]string{
 			"grant_type":    "refresh_token",
@@ -404,15 +543,14 @@ func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
 		reqToken, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(tokenBytes))
 		if err != nil {
 			c.Clog.Error(err.Error(), "create refresh token request failed")
-			return "", fmt.Errorf("create refresh token request failed: %w", err)
+			return "", "", 0, fmt.Errorf("create refresh token request failed: %w", err)
 		}
 		reqToken.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-		client := &http.Client{}
 		respToken, err := client.Do(reqToken)
 		if err != nil {
 			c.Clog.Error(err.Error(), "do refresh token request failed")
-			return "", fmt.Errorf("do refresh token request failed: %w", err)
+			return "", "", 0, fmt.Errorf("do refresh token request failed: %w", err)
 		}
 		defer respToken.Body.Close()
 
@@ -421,10 +559,11 @@ func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
 			Msg          string `json:"msg"`
 			AccessToken  string `json:"access_token"`
 			RefreshToken string `json:"refresh_token"`
+			Expire       int    `json:"expire"`
 		}
 		if err := json.NewDecoder(respToken.Body).Decode(&tokenResp); err != nil {
 			c.Clog.Error(err.Error(), "decode refresh token response failed")
-			return "", fmt.Errorf("decode refresh token response failed: %w", err)
+			return "", "", 0, fmt.Errorf("decode refresh token response failed: %w", err)
 		}
 		if tokenResp.Code != 0 {
 			// 如果 refresh token 失效，尝试继续使用 Code
@@ -433,7 +572,12 @@ func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
 			if tokenResp.RefreshToken != "" {
 				c.Clog.Info(fmt.Sprintf("Info: New Refresh Token obtained: %s", tokenResp.RefreshToken), "fetchUserAccessToken")
 			}
-			return tokenResp.AccessToken, nil
+			// If refresh token is not returned, reuse the old one
+			finalRefreshToken := tokenResp.RefreshToken
+			if finalRefreshToken == "" {
+				finalRefreshToken = refreshToken
+			}
+			return tokenResp.AccessToken, finalRefreshToken, int64(tokenResp.Expire), nil
 		}
 	}
 
@@ -451,15 +595,14 @@ func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
 		reqToken, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(tokenBytes))
 		if err != nil {
 			c.Clog.Error(err.Error(), "create code token request failed")
-			return "", fmt.Errorf("create code token request failed: %w", err)
+			return "", "", 0, fmt.Errorf("create code token request failed: %w", err)
 		}
 		reqToken.Header.Set("Content-Type", "application/json; charset=utf-8")
 
-		client := &http.Client{}
 		respToken, err := client.Do(reqToken)
 		if err != nil {
 			c.Clog.Error(err.Error(), "do code token request failed")
-			return "", fmt.Errorf("do code token request failed: %w", err)
+			return "", "", 0, fmt.Errorf("do code token request failed: %w", err)
 		}
 		defer respToken.Body.Close()
 
@@ -468,22 +611,23 @@ func (c *Client) fetchUserAccessToken(ctx context.Context) (string, error) {
 			Msg          string `json:"msg"`
 			AccessToken  string `json:"access_token"`
 			RefreshToken string `json:"refresh_token"`
+			Expire       int    `json:"expire"`
 		}
 		if err := json.NewDecoder(respToken.Body).Decode(&tokenResp); err != nil {
 			c.Clog.Error(err.Error(), "decode code token response failed")
-			return "", fmt.Errorf("decode code token response failed: %w", err)
+			return "", "", 0, fmt.Errorf("decode code token response failed: %w", err)
 		}
 		if tokenResp.Code != 0 {
 			c.Clog.Error(fmt.Sprintf("Warning: Authorization code failed (code=%d, msg=%s).", tokenResp.Code, tokenResp.Msg), "fetchUserAccessToken")
-			return "", fmt.Errorf("get token by code failed: code=%d, msg=%s", tokenResp.Code, tokenResp.Msg)
+			return "", "", 0, fmt.Errorf("get token by code failed: code=%d, msg=%s", tokenResp.Code, tokenResp.Msg)
 		}
 
 		c.Clog.Info(fmt.Sprintf("Info: Initial Refresh Token: %s", tokenResp.RefreshToken), "fetchUserAccessToken")
-		c.Clog.Info("Action: Please set FEISHU_REFRESH_TOKEN for future runs.", "fetchUserAccessToken")
-		return tokenResp.AccessToken, nil
+		c.Clog.Info("Action: Please set FEISHU_REFRESH_TOKEN for future runs. [func=%s]", "fetchUserAccessToken")
+		return tokenResp.AccessToken, tokenResp.RefreshToken, int64(tokenResp.Expire), nil
 	}
 
-	return "", fmt.Errorf("no user credentials found (FEISHU_REFRESH_TOKEN or FEISHU_USER_CODE)")
+	return "", "", 0, fmt.Errorf("no user credentials found (FEISHU_REFRESH_TOKEN or FEISHU_USER_CODE)")
 }
 
 // GetUserIDByUsernameOrEmpty 尝试使用原生 HTTP 请求调用 search/v1/user 接口
@@ -506,9 +650,9 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 		if err == nil {
 			finalToken = ownerUserToken
 		} else {
-			c.Clog.Info(fmt.Sprintf("Info: Failed to get Owner User Token: %v. Falling back to Tenant/App Token.\n", err), "getUserIDByUsernameOrEmpty")
-			c.Clog.Info("Tip: To use Search API properly, perform a one-time login to get a code/refresh_token.", "getUserIDByUsernameOrEmpty")
-			c.Clog.Info("     Set FEISHU_REFRESH_TOKEN env var to enable automatic User Token retrieval.", "getUserIDByUsernameOrEmpty")
+			c.Clog.Info("Info: Failed to get Owner User Token: %v. Falling back to Tenant/App Token. [func=%s]", err, "getUserIDByUsernameOrEmpty")
+			c.Clog.Info("Tip: To use Search API properly, perform a one-time login to get a code/refresh_token. [func=%s]", "getUserIDByUsernameOrEmpty")
+			c.Clog.Info("     Set FEISHU_REFRESH_TOKEN env var to enable automatic User Token retrieval. [func=%s]", "getUserIDByUsernameOrEmpty")
 
 			// 2. 尝试获取 App Access Token (尝试作为 Owner Token 替代方案)
 			appToken, err := c.GetAndRefreshUserToken(ctx)
@@ -518,7 +662,7 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 				// 3. 获取 Tenant Access Token
 				tenantToken, err := c.GetTenantAccessToken(ctx)
 				if err != nil {
-					c.Clog.Error(fmt.Sprintf("Error: Failed to get tenant token: %v", err), "getUserIDByUsernameOrEmpty")
+					c.Clog.Error("Error: Failed to get tenant token: %v [func=%s]", err, "getUserIDByUsernameOrEmpty")
 					return nil, fmt.Errorf("failed to get tenant token: %w", err)
 				}
 				finalToken = tenantToken
@@ -562,7 +706,7 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 	// 如果 Search API 报错 99991663 (不支持的 Token 类型) 或者 99991668 (权限不足)，尝试回退到 Contact List API
 	if searchResp.Code != 0 {
 		if searchResp.Code == 99991663 || searchResp.Code == 99991668 {
-			c.Clog.Warn(fmt.Sprintf("Warning: Search API not supported for bot (code %d). Falling back to Contact List API.\n", searchResp.Code), "getUserIDByUsernameOrEmpty")
+			c.Clog.Warn("Warning: Search API not supported for bot (code %d). Falling back to Contact List API. [func=%s]", searchResp.Code, "getUserIDByUsernameOrEmpty")
 
 			// Fallback: 使用 Contact.V3.User.List 接口
 			client := c.Client
@@ -581,16 +725,16 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 			}
 
 			if !resp.Success() {
-				c.Clog.Error(fmt.Sprintf("Error: Fallback list api failed: code=%d, msg=%s", resp.Code, resp.Msg), "getUserIDByUsernameOrEmpty")
+				c.Clog.Error("Error: Fallback list api failed: code=%d, msg=%s [func=%s]", resp.Code, resp.Msg, "getUserIDByUsernameOrEmpty")
 				return nil, fmt.Errorf("fallback list api failed: code=%d, msg=%s", resp.Code, resp.Msg)
 			}
 
 			if resp.Data == nil || resp.Data.Items == nil {
-				c.Clog.Error("Error: Fallback list api returned no data", "getUserIDByUsernameOrEmpty")
+				c.Clog.Error("Error: Fallback list api returned no data [func=%s]", "getUserIDByUsernameOrEmpty")
 				return nil, fmt.Errorf("fallback list api returned no data")
 			}
 
-			c.Clog.Info(fmt.Sprintf("Debug: Found %d users in the list. Scanning for match...\n", len(resp.Data.Items)), "getUserIDByUsernameOrEmpty")
+			c.Clog.Info("Debug: Found %d users in the list. Scanning for match... [func=%s]", len(resp.Data.Items), "getUserIDByUsernameOrEmpty")
 
 			var visibleUsers []string
 			for _, user := range resp.Data.Items {
@@ -605,7 +749,7 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 				visibleUsers = append(visibleUsers, fmt.Sprintf("%s(%s)", userName, userID))
 
 				// 打印每个用户的详细信息进行调试
-				c.Clog.Info(fmt.Sprintf("Debug: Scanning user: %s (ID: %s)\n", userName, userID), "getUserIDByUsernameOrEmpty")
+				c.Clog.Info("Debug: Scanning user: %s (ID: %s) [func=%s]", userName, userID, "getUserIDByUsernameOrEmpty")
 
 				if userName == username {
 					// 构造 SearchUserRespBodyUser 对象返回
@@ -622,12 +766,12 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 			// 如果没找到，返回详细的错误信息
 			return nil, fmt.Errorf("user not found: %s. \nPossible reasons:\n1. User is not in the App's Availability Scope (Visible Users: %v).\n2. 'Access user name' permission is not enabled/published.\nPlease add user '%s' to the App's visibility in Feishu Admin.", username, visibleUsers, username)
 		}
-		c.Clog.Error(fmt.Sprintf("Error: Search API failed: code=%d, msg=%s", searchResp.Code, searchResp.Msg), "getUserIDByUsernameOrEmpty")
+		c.Clog.Error("Error: Search API failed: code=%d, msg=%s [func=%s]", searchResp.Code, searchResp.Msg, "getUserIDByUsernameOrEmpty")
 		return nil, fmt.Errorf("search api failed: code=%d, msg=%s", searchResp.Code, searchResp.Msg)
 	}
 
 	if searchResp.Data == nil || searchResp.Data.Users == nil || len(*searchResp.Data.Users) == 0 {
-		c.Clog.Error(fmt.Sprintf("Error: User not found via search api: %s", username), "getUserIDByUsernameOrEmpty")
+		c.Clog.Error("Error: User not found via search api: %s [func=%s]", username, "getUserIDByUsernameOrEmpty")
 		return nil, fmt.Errorf("user not found via search api: %s", username)
 	}
 
@@ -638,7 +782,7 @@ func (c *Client) GetUserIDByUsernameOrEmpty(ctx context.Context, username string
 		}
 	}
 
-	c.Clog.Error(fmt.Sprintf("Error: User found but name mismatch: %s", username), "getUserIDByUsernameOrEmpty")
+	c.Clog.Error("Error: User found but name mismatch: %s [func=%s]", username, "getUserIDByUsernameOrEmpty")
 	return nil, fmt.Errorf("user found but name mismatch: %s", username)
 }
 
@@ -650,7 +794,7 @@ func (c *Client) GetGroupChatMembers(ctx context.Context, chatID string) (interf
 	// 尝试获取 User Access Token
 	userToken, err := c.GetAndRefreshUserToken(ctx)
 	if err != nil {
-		c.Clog.Info(fmt.Sprintf("Info: Failed to get User Token for GetGroupChatMembers: %v. Using Tenant Token.\n", err), "getGroupChatMembers")
+		c.Clog.Info("Info: Failed to get User Token for GetGroupChatMembers: %v. Using Tenant Token. [func=%s]", err, "getGroupChatMembers")
 	}
 
 	// 创建请求对象
@@ -668,13 +812,13 @@ func (c *Client) GetGroupChatMembers(ctx context.Context, chatID string) (interf
 	// 发起请求
 	resp, err := client.Im.V1.ChatMembers.Get(ctx, req, opts...)
 	if err != nil {
-		c.Clog.Error(fmt.Sprintf("Error: Get chat members failed: %v", err), "getGroupChatMembers")
+		c.Clog.Error("Error: Get chat members failed: %v [func=%s]", err, "getGroupChatMembers")
 		return nil, fmt.Errorf("get chat members failed: %w", err)
 	}
 
 	// 服务端错误处理
 	if !resp.Success() {
-		c.Clog.Error(fmt.Sprintf("Error: Get chat members failed: code=%d, msg=%s, logId=%s", resp.Code, resp.Msg, resp.RequestId()), "getGroupChatMembers")
+		c.Clog.Error("Error: Get chat members failed: code=%d, msg=%s, logId=%s [func=%s]", resp.Code, resp.Msg, resp.RequestId(), "getGroupChatMembers")
 		return nil, fmt.Errorf("get chat members failed: code=%d, msg=%s, logId=%s", resp.Code, resp.Msg, resp.RequestId())
 	}
 
@@ -696,7 +840,7 @@ func (c *Client) AddGroupChatMembers(ctx context.Context, chatID string, userIDs
 	// 尝试获取 User Access Token
 	userToken, err := c.GetAndRefreshUserToken(ctx)
 	if err != nil {
-		c.Clog.Info(fmt.Sprintf("Info: Failed to get User Token for AddGroupChatMembers: %v. Using Tenant Token.\n", err), "addGroupChatMembers")
+		c.Clog.Info("Info: Failed to get User Token for AddGroupChatMembers: %v. Using Tenant Token. [func=%s]", err, "addGroupChatMembers")
 	}
 
 	// 构造请求体
@@ -720,7 +864,7 @@ func (c *Client) AddGroupChatMembers(ctx context.Context, chatID string, userIDs
 	// 发起请求
 	resp, err := client.Im.V1.ChatMembers.Create(ctx, req, opts...)
 	if err != nil {
-		c.Clog.Error(fmt.Sprintf("Error: Add chat members failed: %v", err), "addGroupChatMembers")
+		c.Clog.Error("Error: Add chat members failed: %v [func=%s]", err, "addGroupChatMembers")
 		return nil, fmt.Errorf("add chat members failed: %w", err)
 	}
 
@@ -728,10 +872,10 @@ func (c *Client) AddGroupChatMembers(ctx context.Context, chatID string, userIDs
 	if !resp.Success() {
 		// 特定错误处理
 		if resp.Code == 99991672 {
-			c.Clog.Error(fmt.Sprintf("Error: Permission denied (User Token): The App lacks required User Scopes. \nPlease add 'im:chat' or 'im:chat:members' in 'User Scopes'.\nOriginal error: %s", resp.Msg), "addGroupChatMembers")
+			c.Clog.Error("Error: Permission denied (User Token): The App lacks required User Scopes. \nPlease add 'im:chat' or 'im:chat:members' in 'User Scopes'.\nOriginal error: %s [func=%s]", resp.Msg, "addGroupChatMembers")
 			return nil, fmt.Errorf("permission denied (User Token): The App lacks required User Scopes. \nPlease add 'im:chat' or 'im:chat:members' in 'User Scopes'.\nOriginal error: %s", resp.Msg)
 		}
-		c.Clog.Error(fmt.Sprintf("Error: Add chat members failed: code=%d, msg=%s, logId=%s", resp.Code, resp.Msg, resp.RequestId()), "addGroupChatMembers")
+		c.Clog.Error("Error: Add chat members failed: code=%d, msg=%s, logId=%s [func=%s]", resp.Code, resp.Msg, resp.RequestId(), "addGroupChatMembers")
 		return nil, fmt.Errorf("add chat members failed: code=%d, msg=%s, logId=%s", resp.Code, resp.Msg, resp.RequestId())
 	}
 
@@ -747,20 +891,22 @@ func (c *Client) AddGroupChatMembers(ctx context.Context, chatID string, userIDs
 // 返回当前最新的 Token，并启动一个 goroutine 每 30 分钟刷新一次
 func (c *Client) GetCronAndRefreshUserToken(ctx context.Context) (*Token, error) {
 	// 1. 立即获取一次 Token
-	tenantToken, err := c.fetchTenantAccessToken(ctx)
+	tenantToken, _, err := c.fetchTenantAccessToken(ctx)
 	if err != nil {
-		c.Clog.Error(fmt.Sprintf("Error: Failed to get tenant access token: %v", err), "getCronAndRefreshUserToken")
+		c.Clog.Error("Error: Failed to get tenant access token: %v [func=%s]", err, "getCronAndRefreshUserToken")
 		return nil, fmt.Errorf("failed to get tenant access token: %w", err)
 	}
-	userToken, err := c.fetchUserAccessToken(ctx)
+	userToken, userRefreshToken, userExpire, err := c.fetchUserAccessToken(ctx, nil)
 	if err != nil {
-		c.Clog.Error(fmt.Sprintf("Error: Failed to get user access token: %v", err), "getCronAndRefreshUserToken")
+		c.Clog.Error("Error: Failed to get user access token: %v [func=%s]", err, "getCronAndRefreshUserToken")
 		return nil, fmt.Errorf("failed to get user access token: %w", err)
 	}
 
 	initialToken := &Token{
 		TenantAccessToken: tenantToken,
 		UserAccessToken:   userToken,
+		UserRefreshToken:  userRefreshToken,
+		Expire:            userExpire,
 	}
 
 	// 更新缓存
@@ -784,15 +930,19 @@ func (c *Client) GetCronAndRefreshUserToken(ctx context.Context) (*Token, error)
 				return
 			case <-ticker.C:
 				// 刷新 Tenant Token
-				tToken, err := c.fetchTenantAccessToken(ctx)
+				tToken, _, err := c.fetchTenantAccessToken(ctx)
 				if err != nil {
-					c.Clog.Error(fmt.Sprintf("Error refreshing tenant token: %v", err), "getCronAndRefreshUserToken")
+					c.Clog.Error("Error refreshing tenant token: %v [func=%s]", err, "getCronAndRefreshUserToken")
 					continue
 				}
 				// 刷新 User Token
-				uToken, err := c.fetchUserAccessToken(ctx)
+				c.mu.RLock()
+				cached := c.tokenCache
+				c.mu.RUnlock()
+
+				uToken, uRefreshToken, uExpire, err := c.fetchUserAccessToken(ctx, cached)
 				if err != nil {
-					c.Clog.Error(fmt.Sprintf("Error refreshing user token: %v", err), "getCronAndRefreshUserToken")
+					c.Clog.Error("Error refreshing user token: %v [func=%s]", err, "getCronAndRefreshUserToken")
 					continue
 				}
 
@@ -801,9 +951,11 @@ func (c *Client) GetCronAndRefreshUserToken(ctx context.Context) (*Token, error)
 				c.tokenCache = &Token{
 					TenantAccessToken: tToken,
 					UserAccessToken:   uToken,
+					UserRefreshToken:  uRefreshToken,
+					Expire:            uExpire,
 				}
 				c.mu.Unlock()
-				c.Clog.Info(fmt.Sprintf("Info: Tokens refreshed successfully in background."), "getCronAndRefreshUserToken")
+				c.Clog.Info("Info: Tokens refreshed successfully in background. [func=%s]", "getCronAndRefreshUserToken")
 			}
 		}
 	}()

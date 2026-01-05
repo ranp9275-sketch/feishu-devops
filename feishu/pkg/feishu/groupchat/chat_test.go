@@ -10,10 +10,14 @@ import (
 )
 
 func TestCreateGroupChat(t *testing.T) {
+	if os.Getenv("RUN_FEISHU_INTEGRATION_TESTS") != "1" {
+		t.Skip("skipping Feishu integration tests")
+	}
+
 	// 初始化 Client
 	// 注意：NewClient 是作为 method 定义的，所以需要先实例化 Client
 	// 这是一个 Factory 模式的变体
-	cli := (&Client{}).NewClient()
+	cli := NewClient()
 	if cli == nil {
 		t.Fatalf("Failed to initialize Feishu Client")
 	}
@@ -23,14 +27,13 @@ func TestCreateGroupChat(t *testing.T) {
 	// 注意：不要打印 Secret
 
 	t.Run("CreateGroupChat", func(t *testing.T) {
-		// 设置 Tenant Access Token，以便 CreateGroupChat 使用机器人身份创建群
-		os.Setenv("FEISHU_TENANT_ACCESS_TOKEN", "")
-
-		// 确保 User Access Token 为空，强制使用 Tenant Token
-		os.Unsetenv("FEISHU_USER_ACCESS_TOKEN")
+		if os.Getenv("FEISHU_TENANT_ACCESS_TOKEN") == "" && os.Getenv("FEISHU_REFRESH_TOKEN") == "" && os.Getenv("FEISHU_USER_ACCESS_TOKEN") == "" {
+			t.Skip("missing Feishu credentials env vars")
+		}
 
 		// 优先从环境变量获取测试用的 OpenID
-		testUserIDs := []string{""}
+		// 608307895 是已确认可见的用户 ID
+		testUserIDs := []string{"608307895"}
 		if envID := os.Getenv("TEST_OPEN_ID"); envID != "" {
 			testUserIDs = strings.Split(envID, ",")
 		}
@@ -73,11 +76,13 @@ func TestCreateGroupChat(t *testing.T) {
 		}
 
 		// 设置 User Access Token，以便 AddGroupChatMembers 使用用户身份拉人
-		os.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
+		if os.Getenv("FEISHU_USER_ACCESS_TOKEN") == "" && os.Getenv("FEISHU_REFRESH_TOKEN") == "" {
+			t.Skip("missing FEISHU_USER_ACCESS_TOKEN or FEISHU_REFRESH_TOKEN")
+		}
 
 		// 测试拉人进群
 		t.Logf("Adding members to group chat: %s", chatID)
-		testUserIDs = []string{"", ""}
+		testUserIDs = []string{"608307895", "612177649"}
 		// 尝试拉取同一个用户 (幂等性测试) 或其他用户
 		invalidIDs, err := cli.AddGroupChatMembers(context.Background(), chatID, testUserIDs)
 		if err != nil {
@@ -94,16 +99,16 @@ func TestCreateGroupChat(t *testing.T) {
 	// 机器人应用(Tenant Token)无法调用搜索用户接口(99991663错误)
 	// 或者 Contact.V3.User.List 需要开通 '获取用户姓名' 权限才能匹配名字
 	t.Run("SearchUser", func(t *testing.T) {
+		if os.Getenv("FEISHU_USER_ACCESS_TOKEN") == "" && os.Getenv("FEISHU_REFRESH_TOKEN") == "" {
+			t.Skip("missing FEISHU_USER_ACCESS_TOKEN or FEISHU_REFRESH_TOKEN")
+		}
+
 		// Postman 测试用例: "张嘉伟" (需要 User Access Token)
 		// 默认: "肖磊" (如果只有 Tenant Token，可能需要权限才能看到)
 		username := "张嘉伟"
 		if os.Getenv("TEST_SEARCH_USERNAME") != "" {
 			username = os.Getenv("TEST_SEARCH_USERNAME")
 		}
-
-		// 设置初始 Token (由用户提供)
-		// 使用已被验证有效的 User Access Token
-		os.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
 
 		t.Logf("Searching user with username: %s", username)
 
@@ -120,8 +125,9 @@ func TestCreateGroupChat(t *testing.T) {
 	})
 
 	t.Run("GetAndRefreshUserToken", func(t *testing.T) {
-		// 设置初始 Token (由用户提供)
-		os.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
+		if os.Getenv("FEISHU_USER_ACCESS_TOKEN") == "" && os.Getenv("FEISHU_REFRESH_TOKEN") == "" {
+			t.Skip("missing FEISHU_USER_ACCESS_TOKEN or FEISHU_REFRESH_TOKEN")
+		}
 
 		// 调用获取和刷新用户token函数
 		token, err := cli.GetAndRefreshUserToken(context.Background())
@@ -133,7 +139,11 @@ func TestCreateGroupChat(t *testing.T) {
 }
 
 func TestGetCronAndRefreshUserToken(t *testing.T) {
-	cli := (&Client{}).NewClient()
+	if os.Getenv("RUN_FEISHU_INTEGRATION_TESTS") != "1" {
+		t.Skip("skipping Feishu integration tests")
+	}
+
+	cli := NewClient()
 	if cli == nil {
 		t.Fatalf("Failed to initialize Feishu Client")
 	}
@@ -144,7 +154,9 @@ func TestGetCronAndRefreshUserToken(t *testing.T) {
 		defer cancel()
 
 		// 设置 User Access Token，避免 GetAndRefreshUserToken 报错
-		os.Setenv("FEISHU_USER_ACCESS_TOKEN", "")
+		if os.Getenv("FEISHU_USER_ACCESS_TOKEN") == "" && os.Getenv("FEISHU_REFRESH_TOKEN") == "" {
+			t.Skip("missing FEISHU_USER_ACCESS_TOKEN or FEISHU_REFRESH_TOKEN")
+		}
 
 		token, err := cli.GetCronAndRefreshUserToken(ctx)
 		if err != nil {
@@ -167,6 +179,9 @@ func TestGetCronAndRefreshUserToken(t *testing.T) {
 		if cached.TenantAccessToken != token.TenantAccessToken {
 			t.Errorf("Cache mismatch: expected %s, got %s", token.TenantAccessToken, cached.TenantAccessToken)
 		}
+		t.Logf("Cache matches initial token Successfully: Tenant=%s..., User=%s...",
+			limitStr(token.TenantAccessToken, 10),
+			limitStr(token.UserAccessToken, 10))
 
 		// 验证非阻塞：测试应该立即完成，而不是等待 30 分钟
 		// 无需额外代码，如果阻塞，测试框架会超时

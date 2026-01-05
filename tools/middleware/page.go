@@ -32,6 +32,13 @@ func NewPageRequestFromContext(c *gin.Context) *PageRequest {
 	pnStr := c.Query("pageNum")
 	psStr := c.Query("pageSize")
 
+	if pnStr == "" {
+		pnStr = c.Query("page")
+	}
+	if psStr == "" {
+		psStr = c.Query("page_size")
+	}
+
 	if pnStr != "" {
 		p.PageNum, _ = strconv.Atoi(pnStr)
 	}

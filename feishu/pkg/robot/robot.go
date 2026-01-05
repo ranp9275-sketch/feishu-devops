@@ -36,13 +36,24 @@ type NewcFeishuRobotRequest struct {
 }
 
 type CreateFeishuRobotRequest struct {
-	ID        int    `json:"id" gorm:"column:id"`
-	Name      string `json:"name" gorm:"column:name"`
-	Webhook   string `json:"webhook" gorm:"column:webhook"`
-	Project   string `json:"project" gorm:"column:project"`
-	Del       int    `json:"del" gorm:"column:del"`
-	CreatedAt int64  `json:"created_at" gorm:"column:created_at"`
-	UpdatedAt int64  `json:"updated_at" gorm:"column:updated_at"`
+	ID                int    `json:"id" gorm:"column:id"`
+	Name              string `json:"name" gorm:"column:name"`
+	Webhook           string `json:"webhook" gorm:"column:webhook"`
+	AppID             string `json:"app_id" gorm:"column:app_id"`
+	AppSecret         string `json:"app_secret" gorm:"column:app_secret"`
+	EncryptKey        string `json:"encrypt_key" gorm:"column:encrypt_key"`
+	VerificationToken string `json:"verification_token" gorm:"column:verification_token"`
+	UserAccessToken   string `json:"user_access_token" gorm:"column:user_access_token"`
+	UserRefreshToken  string `json:"user_refresh_token" gorm:"column:user_refresh_token"`
+	UserTokenExpire   int64  `json:"user_token_expire" gorm:"column:user_token_expire"`
+	Project           string `json:"project" gorm:"column:project"`
+	Del               int    `json:"del" gorm:"column:del"`
+	CreatedAt         int64  `json:"created_at" gorm:"column:created_at"`
+	UpdatedAt         int64  `json:"updated_at" gorm:"column:updated_at"`
+}
+
+func (CreateFeishuRobotRequest) TableName() string {
+	return "feishu_robots"
 }
 
 func (f *FeishuRobotRequest) TableName() string {
@@ -69,7 +80,7 @@ func (r *FeishuRobot) String() string {
 }
 
 type FeishuRobotSet struct {
-	Items []*FeishuRobot `json:"Items"`
+	Items []*FeishuRobot `json:"items"`
 	Total int64          `json:"total"`
 }
 

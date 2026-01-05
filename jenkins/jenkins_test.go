@@ -2,6 +2,7 @@ package jenkins
 
 import (
 	"context"
+	"os"
 	"testing"
 )
 
@@ -15,6 +16,10 @@ func TestJenkinsClient(t *testing.T) {
 	})
 
 	t.Run("TestBuildHandler", func(t *testing.T) {
+		if os.Getenv("RUN_JENKINS_INTEGRATION_TESTS") != "1" {
+			t.Skip("skipping Jenkins integration tests")
+		}
+
 		client := NewClient()
 		if client == nil {
 			t.Fatal("NewClient() returned nil")

@@ -273,8 +273,9 @@ func handleCardAction(ctx context.Context, event *callback.CardActionTriggerEven
 					// 1. 禁用灰度发布按钮?
 					// 2. 增加灰度发布计数
 					GlobalStore.IncrementActionCount(requestID, service.Name, "do_gray_release")
-					GlobalStore.IncrementActionCount(requestID, service.Name, "do_official_release")
-					// GlobalStore.MarkActionDisabled(requestID, service.Name, "do_gray_release")
+					if strings.EqualFold(actionName, "official") || strings.EqualFold(actionName, "release") || actionName == "正式" {
+						GlobalStore.IncrementActionCount(requestID, service.Name, "do_official_release")
+					}
 				}
 
 				if serverList == nil {

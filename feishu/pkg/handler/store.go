@@ -1,25 +1,43 @@
 package handler
 
 import (
+	"devops/feishu/config"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sync"
+	"time"
+
+	"gorm.io/gorm"
 )
 
 // RequestStore 用于在内存中存储发送的卡片请求数据，以便在回调中重建卡片
 type RequestStore struct {
 	data sync.Map
-	mu   sync.Mutex // 保护写文件操作和复杂对象的更新
+	mu   sync.Mutex // 保护 DB 操作和复杂对象的更新
 }
 
 var GlobalStore = &RequestStore{}
 
-const storageDir = "data/requests"
+type FeishuRequestModel struct {
+	ID        string `gorm:"primaryKey;size:191"`
+	Data      string `gorm:"type:longtext"` // Stores StoredRequest as JSON
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (FeishuRequestModel) TableName() string {
+	return "feishu_requests"
+}
 
 func init() {
-	_ = os.MkdirAll(storageDir, 0755)
+	// Try to ensure table exists on startup, but ignore errors if config not ready
+	if cfg, err := config.LoadConfig(); err == nil {
+		if db := cfg.GetDB(); db != nil {
+			if !db.Migrator().HasTable(&FeishuRequestModel{}) {
+				db.AutoMigrate(&FeishuRequestModel{})
+			}
+		}
+	}
 }
 
 type StoredRequest struct {
@@ -28,30 +46,75 @@ type StoredRequest struct {
 	ActionCounts    map[string]int  // key: "serviceName:action"
 }
 
-// saveToDisk 将请求数据持久化到磁盘
+func (s *RequestStore) getDB() *gorm.DB {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		return nil
+	}
+	return cfg.GetDB()
+}
+
+// ensureTable ensures the table exists (lazy init)
+func (s *RequestStore) ensureTable(db *gorm.DB) {
+	if !db.Migrator().HasTable(&FeishuRequestModel{}) {
+		db.AutoMigrate(&FeishuRequestModel{})
+	}
+}
+
+// saveToDB 将请求数据持久化到数据库
 // 注意：调用此方法前必须持有锁 s.mu
-func (s *RequestStore) saveToDisk(id string, req *StoredRequest) {
-	filePath := filepath.Join(storageDir, id+".json")
-	data, err := json.MarshalIndent(req, "", "  ")
+func (s *RequestStore) saveToDB(id string, req *StoredRequest) {
+	db := s.getDB()
+	if db == nil {
+		fmt.Println("Failed to get DB connection")
+		return
+	}
+	s.ensureTable(db)
+
+	data, err := json.Marshal(req)
 	if err != nil {
 		fmt.Printf("Failed to marshal request data: %v\n", err)
 		return
 	}
-	err = os.WriteFile(filePath, data, 0644)
-	if err != nil {
-		fmt.Printf("Failed to write request data to disk: %v\n", err)
+
+	var model FeishuRequestModel
+	if err := db.First(&model, "id = ?", id).Error; err == nil {
+		// Update
+		model.Data = string(data)
+		model.UpdatedAt = time.Now()
+		if err := db.Save(&model).Error; err != nil {
+			fmt.Printf("Failed to update request data in DB: %v\n", err)
+		}
+	} else {
+		// Create
+		model = FeishuRequestModel{
+			ID:        id,
+			Data:      string(data),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		if err := db.Create(&model).Error; err != nil {
+			fmt.Printf("Failed to create request data in DB: %v\n", err)
+		}
 	}
 }
 
-// loadFromDisk 从磁盘加载请求数据
-func (s *RequestStore) loadFromDisk(id string) *StoredRequest {
-	filePath := filepath.Join(storageDir, id+".json")
-	data, err := os.ReadFile(filePath)
-	if err != nil {
+// loadFromDB 从数据库加载请求数据
+func (s *RequestStore) loadFromDB(id string) *StoredRequest {
+	db := s.getDB()
+	if db == nil {
 		return nil
 	}
+	s.ensureTable(db)
+
+	var model FeishuRequestModel
+	if err := db.First(&model, "id = ?", id).Error; err != nil {
+		return nil
+	}
+
 	var req StoredRequest
-	if err := json.Unmarshal(data, &req); err != nil {
+	if err := json.Unmarshal([]byte(model.Data), &req); err != nil {
 		fmt.Printf("Failed to unmarshal request data: %v\n", err)
 		return nil
 	}
@@ -76,7 +139,7 @@ func (s *RequestStore) Save(id string, req GrayCardRequest) {
 	}
 	s.data.Store(id, stored)
 	// 持久化
-	s.saveToDisk(id, stored)
+	s.saveToDB(id, stored)
 }
 
 func (s *RequestStore) Delete(id string) {
@@ -84,9 +147,11 @@ func (s *RequestStore) Delete(id string) {
 	defer s.mu.Unlock()
 
 	s.data.Delete(id)
-	// 删除磁盘文件
-	filePath := filepath.Join(storageDir, id+".json")
-	_ = os.Remove(filePath)
+
+	db := s.getDB()
+	if db != nil {
+		db.Delete(&FeishuRequestModel{}, "id = ?", id)
+	}
 }
 
 func (s *RequestStore) Get(id string) (*StoredRequest, bool) {
@@ -100,8 +165,8 @@ func (s *RequestStore) Get(id string) (*StoredRequest, bool) {
 		return val.(*StoredRequest), true
 	}
 
-	// 查磁盘
-	loaded := s.loadFromDisk(id)
+	// 查数据库
+	loaded := s.loadFromDB(id)
 	if loaded != nil {
 		s.data.Store(id, loaded) // 回填内存
 		return loaded, true
@@ -120,8 +185,8 @@ func (s *RequestStore) MarkActionDisabled(id, serviceName, action string) {
 	var req *StoredRequest
 
 	if !ok {
-		// 尝试从磁盘加载
-		req = s.loadFromDisk(id)
+		// 尝试从数据库加载
+		req = s.loadFromDB(id)
 		if req == nil {
 			fmt.Printf("MarkActionDisabled: ID %s not found\n", id)
 			return
@@ -135,7 +200,7 @@ func (s *RequestStore) MarkActionDisabled(id, serviceName, action string) {
 	req.DisabledActions[key] = true
 
 	// 更新持久化
-	s.saveToDisk(id, req)
+	s.saveToDB(id, req)
 }
 
 // IncrementActionCount 增加动作执行次数
@@ -147,7 +212,7 @@ func (s *RequestStore) IncrementActionCount(id, serviceName, action string) {
 	var req *StoredRequest
 
 	if !ok {
-		req = s.loadFromDisk(id)
+		req = s.loadFromDB(id)
 		if req == nil {
 			return
 		}
@@ -163,7 +228,7 @@ func (s *RequestStore) IncrementActionCount(id, serviceName, action string) {
 	req.ActionCounts[key]++
 
 	// 更新持久化
-	s.saveToDisk(id, req)
+	s.saveToDB(id, req)
 }
 
 // GetActionCount 获取动作执行次数

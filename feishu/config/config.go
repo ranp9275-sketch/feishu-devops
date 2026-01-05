@@ -88,16 +88,16 @@ func LoadConfig() (*Config, error) {
 			IdleConnTimeout:     getDurationEnv("IDLE_CONN_TIMEOUT", 90*time.Second),
 
 			// Jenkins 配置
-			JenkinsURL:   getEnv("JENKINS_URL", "http://10.8.2.192:30008/"),
+			JenkinsURL:   getEnv("JENKINS_URL", "http://jenkins.example.com/"),
 			JenkinsUser:  getEnv("JENKINS_USER", "admin"),
-			JenkinsToken: getEnv("JENKINS_TOKEN", "admin123"),
+			JenkinsToken: getEnv("JENKINS_TOKEN", ""),
 
 			//mysql 配置
 			mysqlHost:     getEnv("MYSQL_HOST", "localhost"),
 			mysqlPort:     getIntEnv("MYSQL_PORT", 3306),
 			mysqlUser:     getEnv("MYSQL_USER", "root"),
 			mysqlPassword: getEnv("MYSQL_PASSWORD", ""),
-			mysqlDatabase: getEnv("MYSQL_DATABASE", "feishu"),
+			mysqlDatabase: getEnv("MYSQL_DATABASE", "devops"),
 			debug:         getEnv("DEBUG", "false") == "true",
 
 			// 应用服务
